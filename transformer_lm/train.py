@@ -11,6 +11,13 @@ import torch.optim as optim
 import dataset
 
 
+# 没有tailored to new dataset之前是标准的casual LM: 
+# 输入前 n 个 token，预测下一个 token；模型只关心 vocab_size 和 token 序列，不关心数据来自诗歌还是 quote。
+# 它通过 dataset.load_dataset(args.dataset) 加载数据，之后统一切成 context_size+1 的窗口训练。
+
+
+
+
 class SinusoidalPositionalEncoding(nn.Module):
     def __init__(self, dim: int, max_len: int = 10000):
         super().__init__()
@@ -273,18 +280,18 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("--context_size", type=int, default=64)
-    parser.add_argument("--num_blocks", type=int, default=4)
+    parser.add_argument("--num_blocks", type=int, default=3)
     parser.add_argument("--dim", type=int, default=256)
     parser.add_argument("--num_heads", type=int, default=2)
 
     parser.add_argument("--batch_size", type=int, default=48)
-    parser.add_argument("--num_iters", type=int, default=1000)
+    parser.add_argument("--num_iters", type=int, default=600)
 
-    parser.add_argument("--learning_rate", type=float, default=3e-4)
+    parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--weight_decay", type=float, default=1e-5)
     parser.add_argument("--lr_warmup", type=int, default=10)
 
-    parser.add_argument("--dropout", type=float, default=0.0)
+    parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--grad_clip", type=float, default=None)
 
     parser.add_argument("--steps_per_report", type=int, default=5)

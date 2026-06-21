@@ -1,3 +1,5 @@
+# generate.py
+
 import argparse
 import torch
 import torch.nn.functional as F
@@ -5,19 +7,34 @@ import torch.nn.functional as F
 from train import TransformerLM
 
 
+BOS_TOKEN = "<BOS>"
+EOS_TOKEN = "<EOS>"
+SPECIAL_TOKENS = [BOS_TOKEN, EOS_TOKEN]
+
+
 class CharVocab:
     def __init__(self, itos):
         self.itos = itos
-        self.stoi = {ch: i for i, ch in enumerate(itos)}
+        self.stoi = {tok: i for i, tok in enumerate(itos)}
 
     def __len__(self):
         return len(self.itos)
 
-    def encode(self, text):
+    def encode_chars(self, text):
         return [self.stoi[ch] for ch in text if ch in self.stoi]
 
-    def decode(self, ids):
-        return "".join(self.itos[i] for i in ids)
+    def decode(self, ids, skip_special_tokens=True):
+        pieces = []
+
+        for i in ids:
+            tok = self.itos[int(i)]
+
+            if skip_special_tokens and tok in SPECIAL_TOKENS:
+                continue
+
+            pieces.append(tok)
+
+        return "".join(pieces)
 
 
 @torch.no_grad()
@@ -27,15 +44,15 @@ def generate(
     prompt,
     max_new_tokens,
     context_size,
-    temperature,
-    top_k,
     device,
 ):
     model.eval()
 
-    ids = vocab.encode(prompt)
-    if len(ids) == 0:
-        ids = [0]
+    bos_id = vocab.stoi[BOS_TOKEN]
+    eos_id = vocab.stoi[EOS_TOKEN]
+
+    ids = [bos_id]
+    ids.extend(vocab.encode_chars(prompt))
 
     x = torch.tensor(ids, dtype=torch.long, device=device).unsqueeze(0)
 
@@ -43,23 +60,17 @@ def generate(
         x_cond = x[:, -context_size:]
 
         logits = model(x_cond)
-        logits = logits[:, -1, :] / temperature
+        logits = logits[:, -1, :]
 
-        if top_k is not None and top_k > 0:
-            values, _ = torch.topk(logits, top_k)
-            min_value = values[:, -1].unsqueeze(-1)
-            logits = torch.where(
-                logits < min_value,
-                torch.full_like(logits, float("-inf")),
-                logits,
-            )
+        next_id = torch.argmax(logits, dim=-1, keepdim=True)
 
-        probs = F.softmax(logits, dim=-1)
-        next_id = torch.multinomial(probs, num_samples=1)
-
+        token_id = next_id.item()
         x = torch.cat([x, next_id], dim=1)
 
-    return vocab.decode(x[0].tolist())
+        if token_id == eos_id:
+            break
+
+    return vocab.decode(x[0].tolist(), skip_special_tokens=True)
 
 
 def load_model(args):
@@ -99,8 +110,8 @@ def interactive_loop(model, vocab, train_args, device, args):
     print("输入 :len 100 修改生成长度。")
     print("-" * 50)
 
-    temperature = args.temperature
-    top_k = args.top_k
+    # temperature = args.temperature
+    # top_k = args.top_k
     max_new_tokens = args.max_new_tokens
     context_size = train_args["context_size"]
 
@@ -144,8 +155,6 @@ def interactive_loop(model, vocab, train_args, device, args):
             prompt=prompt,
             max_new_tokens=max_new_tokens,
             context_size=context_size,
-            temperature=temperature,
-            top_k=top_k,
             device=device,
         )
 
@@ -168,9 +177,8 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("--max_new_tokens", type=int, default=100)
-    parser.add_argument("--temperature", type=float, default=1.0)
-    parser.add_argument("--top_k", type=int, default=20)
-
+    # parser.add_argument("--temperature", type=float, default=1.0)
+    # parser.add_argument("--top_k", type=int, default=20)
     parser.add_argument("--gpu", action="store_true")
 
     args = parser.parse_args()
